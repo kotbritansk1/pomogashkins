@@ -276,14 +276,14 @@ def main():
     # Берем токен из файла .env
     token = os.getenv("BOT_TOKEN")
 
-    # Указываем специальный прокси PythonAnywhere для работы на бесплатном аккаунте
+    # Указываем прокси PythonAnywhere
     proxy_url = "http://proxy.server:3128"
 
     application = (
         Application.builder()
         .token(token)
-        .proxy_url(proxy_url)
-        .get_updates_proxy_url(proxy_url)
+        .proxy(proxy_url)
+        .get_updates_proxy(proxy_url)
         .build()
     )
 
@@ -294,7 +294,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Бот успешно запущен и готов к работе...")
-    
+
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
