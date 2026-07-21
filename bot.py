@@ -273,8 +273,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     load_data()
 
-    # Сюда автоматически подставится твой токен (не забудь проверить)
-    application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
+    # Берем токен из файла .env
+    token = os.getenv("BOT_TOKEN")
+
+    # Указываем специальный прокси PythonAnywhere для работы на бесплатном аккаунте
+    proxy_url = "http://proxy.server:3128"
+
+    application = (
+        Application.builder()
+        .token(token)
+        .proxy_url(proxy_url)
+        .get_updates_proxy_url(proxy_url)
+        .build()
+    )
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
@@ -283,7 +294,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Бот успешно запущен и готов к работе...")
-    # Очищаем зависшие запросы при старте
+    
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
