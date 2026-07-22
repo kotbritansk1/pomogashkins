@@ -1,14 +1,21 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()  # Загружает токен из файла .env
-import logging
-import random
 import asyncio
 import json
+import logging
 import os
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import random
+from dotenv import load_dotenv
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+
+# Загружает токен из файла .env
+load_dotenv()
 
 # === 1. НАСТРОЙКА ЛОГИРОВАНИЯ ===
 logging.basicConfig(
@@ -109,7 +116,7 @@ def get_timer_keyboard():
 
 # === 4. КОМАНДЫ И ОБРАБОТЧИКИ ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Исправленный обработчик команды /start без ошибки разметки."""
+    """Обработчик команды /start."""
     user_id_str = str(update.effective_user.id)
     init_user_if_not_exists(user_id_str)
     USER_STATES[update.effective_user.id] = None 
@@ -146,10 +153,32 @@ async def run_cooking_timer(update: Update, seconds: int, dish_name: str):
         reply_markup=get_main_keyboard()
     )
 
+# === 5. ОБРАБОТЧИК КНОПКИ «В ИЗБРАННОЕ» ===
+async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка нажатий на инлайн-кнопки под рецептом."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id_str = str(query.from_user.id)
+    init_user_if_not_exists(user_id_str)
+
+    data = query.data
+    if data.startswith("fav_"):
+        recipe_id = int(data.replace("fav_", ""))
+        user_favs = USERS_DATA[user_id_str].setdefault("favorites", [])
+
+        if recipe_id not in user_favs:
+            user_favs.append(recipe_id)
+            save_data()
+            await query.message.reply_text("✅ Рецепт успешно добавлен в ваше Избранное!")
+        else:
+            await query.message.reply_text("Этот рецепт уже есть у вас в Избранном! ⭐")
+
+# === 6. ГЛАВНЫЙ ОБРАБОТЧИК СООБЩЕНИЙ ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Главный обработчик входящих текстовых сообщений."""
     user_id = update.effective_user.id
-    user_id_str = str(user_id)  # Преобразуем ID в строку для ключа JSON
+    user_id_str = str(user_id)
     user_text = update.message.text
     user_text_lower = user_text.lower()
 
@@ -162,7 +191,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Действие отменено.", reply_markup=get_main_keyboard())
         return
 
-    # --- ИСПРАВЛЕННЫЙ ПРОСМОТР ПРОФИЛЯ (без ошибки Markdown) ---
+    # --- ПРОСМОТР ПРОФИЛЯ ---
     if 'профиль' in user_text_lower:
         USER_STATES[user_id] = None  
         profile = USERS_DATA[user_id_str]["profile"]
@@ -199,7 +228,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_state == "профиль_цвет":
             USERS_DATA[user_id_str]["profile"]["color"] = user_text
             USER_STATES[user_id] = None
-            save_data()  # Сохраняем обновленные данные в JSON
+            save_data()
             await update.message.reply_text("🎉 Профиль успешно сохранен в базу JSON!", reply_markup=get_main_keyboard())
         return
 
@@ -238,8 +267,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'избранное' in user_text_lower:
         fav_ids = USERS_DATA[user_id_str].get("favorites", [])
         if not fav_ids:
-            await update.message.reply_text("Ваша книга закладок пока пуста.")
+            await update.message.reply_text("Ваша книга закладок пока пуста. Добавляйте рецепты с помощью кнопки «❤️ В избранное»!")
             return
+
         await update.message.reply_text("❤️ Ваши сохраненные рецепты:")
         for recipe in RECIPES_DATABASE:
             if recipe["id"] in fav_ids:
@@ -247,11 +277,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_photo(photo=recipe["photo"], caption=caption_text)
         return
 
-    # --- СЛУЧАЙНЫЙ РЕЦЕПТ ---
+    # --- СЛУЧАЙНЫЙ РЕЦЕПТ (С КНОПКОЙ ИЗБРАННОГО) ---
     if 'случайный рецепт' in user_text_lower:
         recipe = random.choice(RECIPES_DATABASE)
         caption_text = f"🎲 Случайный выбор:\n\n{recipe['title']}\n\n📖 {recipe['instruction']}"
-        await update.message.reply_photo(photo=recipe["photo"], caption=caption_text)
+
+        # Инлайн-кнопка для добавления текущего рецепта в избранное
+        keyboard = [
+            [InlineKeyboardButton("❤️ Добавить в избранное", callback_data=f"fav_{recipe['id']}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_photo(
+            photo=recipe["photo"],
+            caption=caption_text,
+            reply_markup=reply_markup
+        )
         return
 
     # --- ДОПОЛНИТЕЛЬНЫЕ КНОПКИ ---
@@ -269,7 +310,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     random_fact = random.choice(COOKING_FACTS)
     await update.message.reply_text(f"💡 Интересный факт:\n{random_fact}")
 
-# === 5. ЗАПУСК БОТА ===
+# === 7. ЗАПУСК БОТА ===
 def main():
     load_data()
 
@@ -287,10 +328,15 @@ def main():
         .build()
     )
 
+    # Регистрация хэндлеров команд
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("edit_profile", edit_profile_command))
-    
+
+    # Регистрация хэндлера нажатий на инлайн-кнопку "В избранное"
+    application.add_handler(CallbackQueryHandler(button_click_handler))
+
+    # Регистрация текстового хэндлера
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Бот успешно запущен и готов к работе...")
