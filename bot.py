@@ -262,7 +262,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("💡 Совет дня: Пересоленный соус спасет сырая картофелина на 10 минут.")
         return
     elif user_text_lower == 'о боте':
-        await update.message.reply_text("👨‍🍳 Кулинарный бот с сохранением профиля в JSON.")
+        await update.message.reply_text("👨‍🍳 Кулинарный бот с рецептами который сможет помочь в любую минуту.")
         return
 
     # Если ни одна команда не подошла — присылаем случайный кулинарный факт
